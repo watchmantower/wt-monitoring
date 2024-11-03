@@ -1,0 +1,12 @@
+# Binary dosyaları hariç tutun
+wt-monitoring_linux_amd64
+wt-monitoring_mac_amd64
+wt-monitoring_windows_amd64.exe
+
+# macOS ve diğer sistem dosyaları
+.DS_Store
+Thumbs.db
+
+# Geçici dosyalar ve diğer çöp dosyalar
+*.log
+*.bak
