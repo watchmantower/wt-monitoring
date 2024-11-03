@@ -102,13 +102,22 @@ func collectMetrics(serverID string) Metrics {
     }
 }
 
-func sendMetrics(apiURL string, metrics Metrics) error {
+func sendMetrics(apiURL string, apiKey string, metrics Metrics) error {
     jsonData, err := json.Marshal(metrics)
     if err != nil {
         return err
     }
 
-    resp, err := http.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+    // HTTP isteğini oluştur ve Authorization başlığına API key ekle
+    req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+    if err != nil {
+        return err
+    }
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
     if err != nil {
         return err
     }
@@ -124,18 +133,19 @@ func sendMetrics(apiURL string, metrics Metrics) error {
 
 func main() {
     serverID := flag.String("server_id", "", "Server ID")
+    apiKey := flag.String("api_key", "", "API Key") // API key parametresi
     apiURL := flag.String("api_url", "https://wt.com/api/metrics", "WT API URL")
     flag.Parse()
 
-    if *serverID == "" {
-        fmt.Println("Server ID gerekli")
+    if *serverID == "" || *apiKey == "" {
+        fmt.Println("Server ID ve API Key gerekli")
         return
     }
 
     for {
         metrics := collectMetrics(*serverID)
 
-        if err := sendMetrics(*apiURL, metrics); err != nil {
+        if err := sendMetrics(*apiURL, *apiKey, metrics); err != nil {
             fmt.Println("Metrik gönderim hatası:", err)
         }
 
