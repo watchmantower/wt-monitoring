@@ -1,7 +1,5 @@
 # wt-monitoring
 
-## English
-
 `wt-monitoring` is a lightweight, high-performance server monitoring application written in Go. Its purpose is to help you track and analyze various metrics of your server, such as CPU usage, memory usage, disk space, and more. By running `wt-monitoring` on your server, you can receive real-time data about your server's health and performance.
 
 This tool works in conjunction with the Watchman Tower platform, where all collected metrics are visualized in an intuitive dashboard. The application continuously sends server metrics to the Watchman Tower API, allowing users to monitor their servers remotely.
