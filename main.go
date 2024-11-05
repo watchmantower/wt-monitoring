@@ -38,46 +38,36 @@ type Metrics struct {
     SwapUsage          float64 `json:"swap_usage"`
 }
 
+type APIResponse struct {
+    Status   string `json:"status"`
+    Interval int    `json:"interval"`
+    Message  string `json:"message"`
+}
+
 func collectMetrics(serverID string) Metrics {
-    // CPU kullanımını al
     cpuPercentages, _ := cpu.Percent(0, false)
     cpuUsage := cpuPercentages[0]
-
-    // Bellek kullanımını al
     vmStats, _ := mem.VirtualMemory()
     memoryUsage := vmStats.UsedPercent
-    totalMemory := vmStats.Total / 1024 / 1024 // MB
-    usedMemory := vmStats.Used / 1024 / 1024   // MB
-
-    // Disk kullanımını al
+    totalMemory := vmStats.Total / 1024 / 1024
+    usedMemory := vmStats.Used / 1024 / 1024
     diskStats, _ := disk.Usage("/")
     diskUsage := diskStats.UsedPercent
-    totalDisk := diskStats.Total / 1024 / 1024 // MB
-    usedDisk := diskStats.Used / 1024 / 1024   // MB
-
-    // Ağ (network) kullanımını al
+    totalDisk := diskStats.Total / 1024 / 1024
+    usedDisk := diskStats.Used / 1024 / 1024
     netIOStats, _ := net.IOCounters(false)
-    networkSent := netIOStats[0].BytesSent / 1024 / 1024 // MB
-    networkReceived := netIOStats[0].BytesRecv / 1024 / 1024 // MB
-
-    // Load Average (Yük Ortalaması) al
+    networkSent := netIOStats[0].BytesSent / 1024 / 1024
+    networkReceived := netIOStats[0].BytesRecv / 1024 / 1024
     loadStats, _ := load.Avg()
     load1 := loadStats.Load1
     load5 := loadStats.Load5
     load15 := loadStats.Load15
-
-    // Uptime al
     uptime, _ := host.Uptime()
-
-
-    // Proses sayısı al
     hostInfo, _ := host.Info()
     totalProcesses := hostInfo.Procs
-
-    // Swap bellek kullanımını al
     swapStats, _ := mem.SwapMemory()
-    swapTotal := swapStats.Total / 1024 / 1024 // MB
-    swapUsed := swapStats.Used / 1024 / 1024   // MB
+    swapTotal := swapStats.Total / 1024 / 1024
+    swapUsed := swapStats.Used / 1024 / 1024
     swapUsage := swapStats.UsedPercent
 
     return Metrics{
@@ -102,16 +92,15 @@ func collectMetrics(serverID string) Metrics {
     }
 }
 
-func sendMetrics(apiURL string, apiKey string, metrics Metrics) error {
+func sendMetrics(apiURL string, apiKey string, metrics Metrics) (int, error) {
     jsonData, err := json.Marshal(metrics)
     if err != nil {
-        return err
+        return 10, err
     }
 
-    // HTTP isteğini oluştur ve Authorization başlığına API key ekle
     req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
     if err != nil {
-        return err
+        return 10, err
     }
     req.Header.Set("Content-Type", "application/json")
     req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
@@ -119,22 +108,33 @@ func sendMetrics(apiURL string, apiKey string, metrics Metrics) error {
     client := &http.Client{}
     resp, err := client.Do(req)
     if err != nil {
-        return err
+        return 10, err
     }
     defer resp.Body.Close()
 
     if resp.StatusCode != http.StatusOK {
-        return fmt.Errorf("Sunucu hatası: %s", resp.Status)
+        return 10, fmt.Errorf("Sunucu hatası: %s", resp.Status)
     }
 
-    fmt.Println("Metrikler başarıyla gönderildi:", metrics)
-    return nil
+    var apiResponse APIResponse
+    if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
+        return 10, err
+    }
+
+    if apiResponse.Interval == 0 {
+        fmt.Println("API yanıtında interval değeri eksik, varsayılan interval kullanılacak.")
+        apiResponse.Interval = 10
+    }
+
+    fmt.Printf("Metrikler başarıyla gönderildi. Yeni interval: %d saniye\n", apiResponse.Interval)
+
+    return apiResponse.Interval, nil
 }
 
 func main() {
     serverID := flag.String("server_id", "", "Server ID")
-    apiKey := flag.String("api_key", "", "API Key") // API key parametresi
-    apiURL := flag.String("api_url", "https://wt.com/api/metrics", "WT API URL")
+    apiKey := flag.String("api_key", "", "API Key")
+    apiURL := flag.String("api_url", "", "WT API URL")
     flag.Parse()
 
     if *serverID == "" || *apiKey == "" {
@@ -142,13 +142,19 @@ func main() {
         return
     }
 
+    interval := 10 // Varsayılan bekleme süresi
+
     for {
         metrics := collectMetrics(*serverID)
 
-        if err := sendMetrics(*apiURL, *apiKey, metrics); err != nil {
+        newInterval, err := sendMetrics(*apiURL, *apiKey, metrics)
+        if err != nil {
             fmt.Println("Metrik gönderim hatası:", err)
+            // Hata durumunda eski interval süresini koru
+        } else {
+            interval = newInterval
         }
 
-        time.Sleep(10 * time.Second)
+        time.Sleep(time.Duration(interval) * time.Second)
     }
 }
