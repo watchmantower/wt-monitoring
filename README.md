@@ -12,3 +12,11 @@ By registering on the platform, you'll be able to:
 - Add multiple servers to monitor.
 - Receive alerts when your server's health metrics deviate from your set thresholds.
 - Analyze historical data for better insights into server performance.
+
+---
+
+## 🔗 Links
+- 🌐 [Watchman Tower Website](https://www.watchmantower.com)
+- 🧩 [Dashboard / App](https://app.watchmantower.com)
+- 📨 [Support](mailto:support@watchmantower.com)
+- 🧠 [GitHub Repository](https://github.com/watchmantower/wt-monitoring)

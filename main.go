@@ -7,45 +7,53 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
+	"sort"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
+	"github.com/shirou/gopsutil/v3/process"
 )
 
 // Uygulama sürümü
-const AppVersion = "v1.2.0"
+const AppVersion = "v1.3.0"
 
 var staticMetrics Metrics
 
+// Süreç (Servis) Metrikleri Yapısı
+type ProcessMetrics struct {
+	Name        string  `json:"name"`
+	CPUUsage    float64 `json:"cpu_usage"`
+	MemoryUsage uint64  `json:"memory_usage"`
+}
+
+// Ana Metrik Yapısı
 type Metrics struct {
-	ServerID            string  `json:"server_id"`
-	AppVersion          string  `json:"app_version"`
-	CPUUsage            float64 `json:"cpu_usage"`
-	MemoryUsage         float64 `json:"memory_usage"`
-	TotalMemory         uint64  `json:"total_memory"`
-	UsedMemory          uint64  `json:"used_memory"`
-	DiskUsage           float64 `json:"disk_usage"`
-	TotalDisk           uint64  `json:"total_disk"`
-	UsedDisk            uint64  `json:"used_disk"`
-	NetworkSent         uint64  `json:"network_sent"`
-	NetworkReceived     uint64  `json:"network_received"`
-	Load1               float64 `json:"load_1"`
-	Load5               float64 `json:"load_5"`
-	Load15              float64 `json:"load_15"`
-	Uptime              uint64  `json:"uptime"`
-	OpenFileDescriptors uint64  `json:"open_file_descriptors"`
-	TotalProcesses      uint64  `json:"total_processes"`
-	SwapTotal           uint64  `json:"swap_total"`
-	SwapUsed            uint64  `json:"swap_used"`
-	SwapUsage           float64 `json:"swap_usage"`
-	OS                  string  `json:"os,omitempty"`
-	Platform            string  `json:"platform,omitempty"`
-	PlatformVersion     string  `json:"platform_version,omitempty"`
-	KernelVersion       string  `json:"kernel_version,omitempty"`
+	ServerID            string           `json:"server_id"`
+	AppVersion          string           `json:"app_version"`
+	CPUUsage            float64          `json:"cpu_usage"`
+	MemoryUsage         float64          `json:"memory_usage"`
+	TotalMemory         uint64           `json:"total_memory"`
+	UsedMemory          uint64           `json:"used_memory"`
+	DiskUsage           float64          `json:"disk_usage"`
+	TotalDisk           uint64           `json:"total_disk"`
+	UsedDisk            uint64           `json:"used_disk"`
+	NetworkSent         uint64           `json:"network_sent"`
+	NetworkReceived     uint64           `json:"network_received"`
+	Load1               float64          `json:"load_1"`
+	Load5               float64          `json:"load_5"`
+	Load15              float64          `json:"load_15"`
+	Uptime              uint64           `json:"uptime"`
+	SwapTotal           uint64           `json:"swap_total"`
+	SwapUsed            uint64           `json:"swap_used"`
+	SwapUsage           float64          `json:"swap_usage"`
+	OS                  string           `json:"os,omitempty"`
+	Platform            string           `json:"platform,omitempty"`
+	PlatformVersion     string           `json:"platform_version,omitempty"`
+	KernelVersion       string           `json:"kernel_version,omitempty"`
+	Processes           []ProcessMetrics `json:"processes"`
 }
 
 func initStaticMetrics(serverID string) {
@@ -59,17 +67,57 @@ func initStaticMetrics(serverID string) {
 		PlatformVersion: hostInfo.PlatformVersion,
 		KernelVersion:   hostInfo.KernelVersion,
 	}
-	
 }
 
+// API Yanıt Yapısı
 type APIResponse struct {
 	Status   string `json:"status"`
 	Interval int    `json:"interval"`
 	Message  string `json:"message"`
 }
 
+// En çok kaynak kullanan 20 süreci al
+func collectProcessMetrics() []ProcessMetrics {
+	processList := []ProcessMetrics{}
+	processes, _ := process.Processes()
+
+	for _, proc := range processes {
+		name, err := proc.Name()
+		if err != nil {
+			continue
+		}
+		cpuPercent, err := proc.CPUPercent()
+		if err != nil {
+			continue
+		}
+		memInfo, err := proc.MemoryInfo()
+		if err != nil {
+			continue
+		}
+
+
+		processList = append(processList, ProcessMetrics{
+			Name:        name,
+			CPUUsage:    cpuPercent,
+			MemoryUsage: memInfo.RSS / 1024, // KB cinsinden
+		})
+	}
+
+	// Süreçleri CPU ve Bellek kullanımına göre sıralama
+	sort.Slice(processList, func(i, j int) bool {
+		return processList[i].CPUUsage > processList[j].CPUUsage // CPU kullanımına göre azalan sıralama
+	})
+
+	// İlk 20 süreci al
+	if len(processList) > 20 {
+		processList = processList[:20]
+	}
+
+	return processList
+}
+
+// Dinamik Verileri Toplama
 func collectDynamicMetrics() Metrics {
-	// Dinamik bilgiler
 	cpuPercentages, _ := cpu.Percent(0, false)
 	cpuUsage := cpuPercentages[0]
 	vmStats, _ := mem.VirtualMemory()
@@ -93,6 +141,9 @@ func collectDynamicMetrics() Metrics {
 	swapUsed := swapStats.Used / 1024 / 1024
 	swapUsage := swapStats.UsedPercent
 
+	// Süreç (Servis) metriklerini al
+	processMetrics := collectProcessMetrics()
+
 	return Metrics{
 		CPUUsage:           cpuUsage,
 		MemoryUsage:        memoryUsage,
@@ -110,9 +161,11 @@ func collectDynamicMetrics() Metrics {
 		SwapTotal:          swapTotal,
 		SwapUsed:           swapUsed,
 		SwapUsage:          swapUsage,
+		Processes:          processMetrics, // Yeni eklenen alan
 	}
 }
 
+// Metrikleri API'ye Gönderme
 func sendMetrics(apiURL string, apiKey string, metrics Metrics) (int, error) {
 	jsonData, err := json.Marshal(metrics)
 	if err != nil {
@@ -152,6 +205,7 @@ func sendMetrics(apiURL string, apiKey string, metrics Metrics) (int, error) {
 	return apiResponse.Interval, nil
 }
 
+// Ana Program Döngüsü
 func main() {
 	serverID := flag.String("server_id", "", "Server ID")
 	apiKey := flag.String("api_key", "", "API Key")
@@ -163,23 +217,20 @@ func main() {
 		return
 	}
 
-	// Statik bilgileri sadece bir kez al
+	// Statik bilgileri başlat
 	initStaticMetrics(*serverID)
 
-	// İlk olarak statik bilgileri içeren metrikleri API'ye gönder
+	// İlk statik metrikleri gönder
 	initialInterval, err := sendMetrics(*apiURL, *apiKey, staticMetrics)
 	if err != nil {
 		fmt.Println("İlk statik metrik gönderimi hatası:", err)
-		initialInterval = 10 // Hata durumunda varsayılan interval
+		initialInterval = 10
 	}
 
 	interval := initialInterval
 
 	for {
-		// Dinamik verileri topla
 		dynamicMetrics := collectDynamicMetrics()
-
-		// Dinamik verileri gönderirken statik bilgileri boş geçiyoruz
 		dynamicMetrics.ServerID = staticMetrics.ServerID
 		dynamicMetrics.AppVersion = staticMetrics.AppVersion
 
