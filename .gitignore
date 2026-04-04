@@ -1,7 +1,7 @@
 # Binary dosyaları hariç tutun
-wt-monitoring_linux_amd64
-wt-monitoring_mac_amd64
-wt-monitoring_windows_amd64.exe
+wt-warden_linux_amd64
+wt-warden_mac_amd64
+wt-warden_windows_amd64.exe
 
 # macOS ve diğer sistem dosyaları
 .DS_Store
