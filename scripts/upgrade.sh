@@ -12,13 +12,19 @@ SERVICE_FILE="/etc/systemd/system/${APP_NAME}.service"
 LEGACY_SERVICE_FILE="/etc/systemd/system/${LEGACY_APP_NAME}.service"
 
 VERSION=""
+SERVER_ID=""
+API_KEY=""
+API_URL=""
 
 usage() {
   cat <<'EOF'
-Usage: upgrade.sh --version <version>
+Usage: upgrade.sh --version <version> [--server-id <id>] [--api-key <key>] [--api-url <url>]
 
 Optional:
   --version       Release version, for example 1.4.0 or v1.4.0
+  --server-id     Explicit Watchman Tower server id
+  --api-key       Explicit Watchman Tower API key
+  --api-url       Explicit Metrics API URL
 EOF
 }
 
@@ -68,6 +74,17 @@ ensure_env_file() {
 
   mkdir -p "${CONFIG_DIR}"
 
+  if [[ -n "${SERVER_ID}" && -n "${API_KEY}" ]]; then
+    local resolved_api_url="${API_URL:-https://metric.watchmantower.com}"
+    cat > "${ENV_FILE}" <<EOF
+WARDEN_SERVER_ID=${SERVER_ID}
+WARDEN_API_KEY=${API_KEY}
+WARDEN_API_URL=${resolved_api_url}
+EOF
+    chmod 0600 "${ENV_FILE}"
+    return
+  fi
+
   if [[ -f "${LEGACY_SERVICE_FILE}" ]]; then
     local exec_line server_id api_key api_url
     exec_line="$(grep -E '^ExecStart=' "${LEGACY_SERVICE_FILE}" || true)"
@@ -110,7 +127,7 @@ After=network.target
 [Service]
 Type=simple
 EnvironmentFile=${ENV_FILE}
-ExecStart=/bin/sh -c '${INSTALL_PATH} --server_id="$$WARDEN_SERVER_ID" --api_key="$$WARDEN_API_KEY" --api_url="$$WARDEN_API_URL"'
+ExecStart=/bin/sh -c '${INSTALL_PATH} --server_id="\$WARDEN_SERVER_ID" --api_key="\$WARDEN_API_KEY" --api_url="\$WARDEN_API_URL"'
 Restart=always
 RestartSec=5
 User=root
@@ -137,6 +154,18 @@ parse_args() {
     case "$1" in
       --version)
         VERSION="${2:-}"
+        shift 2
+        ;;
+      --server-id)
+        SERVER_ID="${2:-}"
+        shift 2
+        ;;
+      --api-key)
+        API_KEY="${2:-}"
+        shift 2
+        ;;
+      --api-url)
+        API_URL="${2:-}"
         shift 2
         ;;
       -h|--help)

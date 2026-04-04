@@ -96,7 +96,7 @@ After=network.target
 [Service]
 Type=simple
 EnvironmentFile=${ENV_FILE}
-ExecStart=/bin/sh -c '${INSTALL_PATH} --server_id="$$WARDEN_SERVER_ID" --api_key="$$WARDEN_API_KEY" --api_url="$$WARDEN_API_URL"'
+ExecStart=/bin/sh -c '${INSTALL_PATH} --server_id="\$WARDEN_SERVER_ID" --api_key="\$WARDEN_API_KEY" --api_url="\$WARDEN_API_URL"'
 Restart=always
 RestartSec=5
 User=root
